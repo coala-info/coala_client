@@ -27,7 +27,7 @@ pip install -e .
 coala init
 ```
 
-This creates a default MCP servers configuration file at `~/.config/coala/mcp_servers.json`.
+This creates a default MCP servers configuration file at `~/.config/coala/mcps/mcp_servers.json`.
 
 ### 2. Set API Key
 
@@ -73,17 +73,17 @@ coala --no-mcp
 | `OPENAI_MODEL` | OpenAI model | `gpt-4o` |
 | `GEMINI_API_KEY` | Gemini API key | - |
 | `GEMINI_BASE_URL` | Gemini base URL | `https://generativelanguage.googleapis.com/v1beta/openai` |
-| `GEMINI_MODEL` | Gemini model | `gemini-2.0-flash-exp` |
+| `GEMINI_MODEL` | Gemini model | `gemini-2.5-flash-lite` |
 | `OLLAMA_BASE_URL` | Ollama base URL | `http://localhost:11434/v1` |
-| `OLLAMA_MODEL` | Ollama model | `llama3.2` |
+| `OLLAMA_MODEL` | Ollama model | `qwen3` |
 | `SYSTEM_PROMPT` | System prompt | `You are a helpful assistant.` |
 | `MAX_TOKENS` | Max tokens in response | `4096` |
 | `TEMPERATURE` | Temperature | `0.7` |
-| `MCP_CONFIG_FILE` | MCP config file path | `~/.config/coala/mcp_servers.json` |
+| `MCP_CONFIG_FILE` | MCP config file path | `~/.config/coala/mcps/mcp_servers.json` |
 
 ### MCP Servers Configuration
 
-Edit `~/.config/coala/mcp_servers.json`:
+Edit `~/.config/coala/mcps/mcp_servers.json`:
 
 ```json
 {
@@ -117,7 +117,7 @@ PROVIDER=gemini
 
 # API keys and model settings
 GEMINI_API_KEY=your-gemini-api-key
-GEMINI_MODEL=gemini-2.0-flash-exp
+GEMINI_MODEL=gemini-2.5-flash-lite
 ```
 
 **Note:** The `PROVIDER` variable in the env file will set the default LLM provider. These variables will be merged with server-specific `env` settings in `mcp_servers.json`. Server-specific environment variables take precedence over the base environment variables.
@@ -135,6 +135,7 @@ Options:
 - `-p, --provider`: LLM provider (openai/gemini/ollama/custom)
 - `-m, --model`: Model name override
 - `--no-mcp`: Disable MCP servers
+- `--sandbox`: Enable `run_command` tool so the LLM can run basic Linux shell commands (timeout 30s)
 
 ### Single Prompt
 
@@ -151,6 +152,8 @@ During interactive chat:
 - `/clear` - Clear conversation history
 - `/tools` - List available MCP tools
 - `/servers` - List connected MCP servers
+- `/skill` - List installed skills (from ~/.config/coala/skills/)
+- `/skill <name>` - Load a skill into the chat (adds its instructions to context)
 - `/model` - Show current model info
 - `/switch <provider>` - Switch provider
 
@@ -160,6 +163,35 @@ During interactive chat:
 coala init    # Create default config files
 coala config  # Show current configuration
 ```
+
+### CWL toolset as MCP server
+
+```bash
+# Import one or more CWL files into a named toolset (copied to ~/.config/coala/mcps/<toolset>/)
+coala mcp <TOOLSET> file1.cwl [file2.cwl ...]
+
+# Import a zip of CWL files (extracted to ~/.config/coala/mcps/<toolset>/)
+coala mcp <TOOLSET> tools.zip
+
+# SOURCES can also be http(s) URLs to a .cwl file or a .zip
+coala mcp <TOOLSET> https://example.com/tools.zip
+coala mcp <TOOLSET> https://example.com/tool.cwl
+```
+
+This creates `run_mcp.py` in `~/.config/coala/mcps/<toolset>/`, adds the server to `~/.config/coala/mcps/mcp_servers.json`, and prints the MCP entry. The generated script uses `coala.mcp_api` (stdio transport). Ensure the `coala` package is installed in the environment that runs the MCP server.
+
+### Skills
+
+```bash
+# Import skills from a GitHub folder (e.g. vercel-labs/agent-skills/skills)
+coala skill https://github.com/vercel-labs/agent-skills/tree/main/skills
+
+# Import from a zip URL or local zip/directory
+coala skill http://localhost:3000/files/bedtools/bedtools-skills.zip
+coala skill ./my-skills.zip
+```
+
+All skills are copied to `~/.config/coala/skills/`. Each source gets its own subfolder (e.g. `skills/bedtools/` for a zip from `.../bedtools/bedtools-skills.zip`, `skills/agent-skills/` for the GitHub repo).
 
 ## Examples
 

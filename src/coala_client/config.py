@@ -44,10 +44,10 @@ class Config(BaseSettings):
 
     gemini_api_key: str = ""
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
-    gemini_model: str = "gemini-2.0-flash-exp"
+    gemini_model: str = "gemini-2.5-flash-lite"
 
     ollama_base_url: str = "http://localhost:11434/v1"
-    ollama_model: str = "llama3.2"
+    ollama_model: str = "qwen3"
 
     # Custom provider
     custom_api_key: str = ""
@@ -55,7 +55,7 @@ class Config(BaseSettings):
     custom_model: str = ""
 
     # MCP servers config file path
-    mcp_config_file: str = "~/.config/coala/mcp_servers.json"
+    mcp_config_file: str = "~/.config/coala/mcps/mcp_servers.json"
     # Environment variables file path
     env_file: str = "~/.config/coala/env"
 
@@ -125,7 +125,12 @@ class Config(BaseSettings):
         """Load MCP server configurations from file."""
         config_path = Path(self.mcp_config_file).expanduser()
         if not config_path.exists():
-            return {}
+            # Backward compatibility: try legacy path
+            legacy = Path("~/.config/coala/mcp_servers.json").expanduser()
+            if legacy.exists():
+                config_path = legacy
+            else:
+                return {}
 
         with open(config_path) as f:
             data = json.load(f)
@@ -195,9 +200,11 @@ def create_default_mcp_config() -> None:
     """Create default MCP servers configuration file and env file."""
     config_dir = Path("~/.config/coala").expanduser()
     config_dir.mkdir(parents=True, exist_ok=True)
+    mcps_dir = config_dir / "mcps"
+    mcps_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create MCP servers config
-    config_path = config_dir / "mcp_servers.json"
+    # Create MCP servers config under mcps/
+    config_path = mcps_dir / "mcp_servers.json"
     if not config_path.exists():
         default_config: dict[str, Any] = {
             "mcpServers": {
@@ -223,4 +230,4 @@ def create_default_mcp_config() -> None:
             f.write("# Example:\n")
             f.write("# PROVIDER=gemini\n")
             f.write("# GEMINI_API_KEY=your-gemini-api-key\n")
-            f.write("# GEMINI_MODEL=gemini-2.0-flash-exp\n")
+            f.write("# GEMINI_MODEL=gemini-2.5-flash-lite\n")

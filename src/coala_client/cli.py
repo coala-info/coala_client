@@ -15,6 +15,12 @@ from rich.text import Text
 from .config import Config, create_default_mcp_config, load_config
 from .llm_client import LLMClient
 from .mcp_manager import MCPManager
+from .sandbox import (
+    SANDBOX_TOOL_NAME,
+    get_sandbox_tool,
+    run_sandbox_command,
+)
+from .skill_import import SKILLS_DIR, get_skill_content, list_skills
 
 
 console = Console()
@@ -49,6 +55,7 @@ def print_help() -> None:
   [cyan]/clear[/cyan]       - Clear conversation history
   [cyan]/tools[/cyan]       - List available MCP tools
   [cyan]/servers[/cyan]     - List connected MCP servers
+  [cyan]/skill [name][/cyan]      - Load a skill (list if no name)
   [cyan]/model[/cyan]       - Show current model info
   [cyan]/switch <provider>[/cyan] - Switch provider (openai/gemini/ollama)
 
@@ -66,15 +73,18 @@ class ChatSession:
         self,
         config: Config,
         mcp_manager: MCPManager | None = None,
+        sandbox_enabled: bool = False,
     ) -> None:
         """Initialize the chat session.
 
         Args:
             config: Application configuration.
             mcp_manager: Optional MCP manager.
+            sandbox_enabled: If True, LLM can run basic shell commands via run_command tool.
         """
         self.config = config
         self.mcp_manager = mcp_manager
+        self.sandbox_enabled = sandbox_enabled
         self.llm_client = LLMClient(config)
         self.llm_client.add_system_message(config.system_prompt)
         self._pending_tool_results: dict[str, str] = {}
@@ -93,13 +103,18 @@ class ChatSession:
         Returns:
             Tool result as string.
         """
-        if not self.mcp_manager:
-            return f"Error: No MCP servers connected"
-
         console.print(f"  [yellow]⚙ Calling tool:[/yellow] {name}")
         console.print(f"    [dim]Arguments: {json.dumps(arguments, indent=2)}[/dim]")
 
-        result = await self.mcp_manager.call_tool(name, arguments)
+        if name == SANDBOX_TOOL_NAME and self.sandbox_enabled:
+            cmd = arguments.get("command", "")
+            timeout = arguments.get("timeout", 30)
+            cwd = arguments.get("cwd")
+            result = run_sandbox_command(cmd, timeout=timeout, cwd=cwd)
+        elif self.mcp_manager:
+            result = await self.mcp_manager.call_tool(name, arguments)
+        else:
+            result = "Error: No MCP servers connected and tool is not run_command"
 
         # Truncate long results for display
         display_result = result[:500] + "..." if len(result) > 500 else result
@@ -116,10 +131,14 @@ class ChatSession:
         # Add user message to the conversation
         self.llm_client.add_user_message(user_input)
 
-        # Get available tools
-        tools = None
+        # Get available tools (MCP + optional sandbox)
+        tools: list[Any] = []
         if self.mcp_manager:
-            tools = self.mcp_manager.get_openai_tools()
+            tools = list(self.mcp_manager.get_openai_tools())
+        if self.sandbox_enabled:
+            tools = tools + [get_sandbox_tool()]
+        if not tools:
+            tools = None
 
         console.print()
         console.print("[green]Coala:[/green] ", end="")
@@ -212,6 +231,29 @@ class ChatSession:
         for name, connection in self.mcp_manager.connections.items():
             console.print(f"  [cyan]{name}[/cyan]: {len(connection.tools)} tools")
 
+    def show_skills(self) -> None:
+        """List installed skills from ~/.config/coala/skills/."""
+        names = list_skills()
+        if not names:
+            console.print(f"[yellow]No skills installed. Add some with: coala skill <url_or_zip>[/yellow]")
+            console.print(f"[dim]Skills directory: {SKILLS_DIR}[/dim]")
+            return
+        console.print(f"[blue]Installed skills ({len(names)}):[/blue]")
+        for name in names:
+            console.print(f"  [cyan]{name}[/cyan]")
+        console.print("[dim]Use /skill <name> to load a skill into this chat.[/dim]")
+
+    def load_skill(self, name: str) -> bool:
+        """Load a skill by name into the conversation (appends to system context). Returns True if loaded."""
+        content = get_skill_content(name)
+        if content is None:
+            console.print(f"[red]Skill not found: {name}[/red]")
+            console.print(f"[dim]Look for names in /skill (installed under {SKILLS_DIR})[/dim]")
+            return False
+        self.llm_client.add_system_message(content)
+        console.print(f"[green]Loaded skill: {name}[/green]")
+        return True
+
     async def run(self) -> None:
         """Run the interactive chat session."""
         print_welcome()
@@ -250,6 +292,16 @@ class ChatSession:
                 elif cmd == "/servers":
                     self.show_servers()
                     continue
+                elif cmd == "/skill":
+                    self.show_skills()
+                    continue
+                elif cmd.startswith("/skill "):
+                    name = cmd.split(" ", 1)[1].strip()
+                    if name:
+                        self.load_skill(name)
+                    else:
+                        self.show_skills()
+                    continue
                 elif cmd == "/model":
                     self.show_model_info()
                     continue
@@ -273,6 +325,7 @@ async def run_chat(
     provider: str | None = None,
     model: str | None = None,
     no_mcp: bool = False,
+    sandbox: bool = False,
 ) -> None:
     """Run the chat interface.
 
@@ -280,6 +333,7 @@ async def run_chat(
         provider: LLM provider name.
         model: Model name override.
         no_mcp: If True, don't connect to MCP servers.
+        sandbox: If True, enable run_command tool for basic shell commands.
     """
     config = load_config()
 
@@ -304,13 +358,13 @@ async def run_chat(
             except Exception as e:
                 console.print(f"[yellow]Warning: Could not connect to MCP servers: {e}[/yellow]")
 
-            session = ChatSession(config, mcp_manager)
+            session = ChatSession(config, mcp_manager, sandbox_enabled=sandbox)
             try:
                 await session.run()
             finally:
                 await session.close()
     else:
-        session = ChatSession(config, None)
+        session = ChatSession(config, None, sandbox_enabled=sandbox)
         try:
             await session.run()
         finally:
@@ -322,6 +376,7 @@ async def run_single_prompt(
     provider: str | None = None,
     model: str | None = None,
     no_mcp: bool = False,
+    sandbox: bool = False,
 ) -> None:
     """Run a single prompt and exit.
 
@@ -330,6 +385,7 @@ async def run_single_prompt(
         provider: LLM provider name.
         model: Model name override.
         no_mcp: If True, don't connect to MCP servers.
+        sandbox: If True, enable run_command tool for basic shell commands.
     """
     config = load_config()
 
@@ -351,14 +407,14 @@ async def run_single_prompt(
             except Exception:
                 pass
 
-            session = ChatSession(config, manager)
+            session = ChatSession(config, manager, sandbox_enabled=sandbox)
             try:
                 await session.process_message(prompt)
             finally:
                 await session.close()
 
     async def run_without_mcp() -> None:
-        session = ChatSession(config, None)
+        session = ChatSession(config, None, sandbox_enabled=sandbox)
         try:
             await session.process_message(prompt)
         finally:
