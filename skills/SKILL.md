@@ -5,7 +5,7 @@ description: How to use the coala-client CLI for chat with LLMs, MCP servers, an
 
 # Coala Client
 
-CLI for chat with OpenAI-compatible LLMs (OpenAI, Gemini, Ollama) and MCP (Model Context Protocol) servers. Supports importing CWL toolsets as MCP servers, importing skills, and an optional sandbox to run shell commands.
+Part of the coala ecosystem. CLI for chat with OpenAI-compatible LLMs (OpenAI, Gemini, Ollama) and MCP (Model Context Protocol) servers. Supports importing CWL toolsets as MCP servers, importing skills, and an optional sandbox to run shell commands.
 
 ## Config paths
 
@@ -31,6 +31,8 @@ CLI for chat with OpenAI-compatible LLMs (OpenAI, Gemini, Ollama) and MCP (Model
    `-p, --provider` (openai|gemini|ollama|custom), `-m, --model`, `--no-mcp`, `--sandbox`.
 
 ## MCP: CWL toolsets
+
+No API key needed for MCP import, list, or call — only for chat/ask with an LLM.
 
 - **Import** (creates toolset under `~/.config/coala/mcps/<TOOLSET>/` and registers server):  
   `coala mcp-import <TOOLSET> <SOURCES...>` or alias `coala mcp ...`  
