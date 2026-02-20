@@ -12,11 +12,7 @@ A simple command line interface for LLM with MCP (Model Context Protocol) server
 ## Installation
 
 ```bash
-# Using uv (recommended)
-uv pip install -e .
-
-# Or using pip
-pip install -e .
+pip install coala-client
 ```
 
 ## Quick Start
@@ -251,6 +247,16 @@ uv pip install -e ".[dev]"
 # Run tests
 pytest
 ```
+
+## Publishing to PyPI
+
+The repo includes a GitHub Action (`.github/workflows/release.yml`) that builds with Poetry and publishes to PyPI when a release is published.
+
+1. **Create a GitHub environment** named `pypi` (optional but recommended).
+2. **Configure PyPI** using one of:
+   - **Trusted Publishing (recommended)**: In PyPI → Your projects → coala-client → Publishing, add a new trusted publisher: GitHub, this repo, workflow `publish-pypi.yml`, environment `pypi`. No secrets needed.
+   - **API token**: Generate a token at pypi.org, add it as repository (or `pypi` environment) secret `PYPI_API_TOKEN`.
+3. **Publish**: Create a new release (tag e.g. `v0.1.0`). The workflow runs on release and uploads the built package. You can also run it manually (Actions → Build and publish to PyPI → Run workflow).
 
 ## License
 
