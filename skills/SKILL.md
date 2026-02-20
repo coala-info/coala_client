@@ -59,9 +59,6 @@ No API key needed for MCP import, list, or call — only for chat/ask with an LL
   `/skill` — list installed skills.  
   `/skill <name>` — load skill from `~/.config/coala/skills/<name>/` (e.g. SKILL.md) into context.
 
-## Sandbox
-
-`coala --sandbox` or `coala ask "..." --sandbox` — adds a `run_command` tool so the LLM can run basic shell commands (timeout 30s). Optional `timeout` and `cwd` in args.
 
 ## Chat commands
 
