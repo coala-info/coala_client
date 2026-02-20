@@ -23,6 +23,7 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = ">=3.10"
+coala-cli = ">=0.2.0"
 openai = ">=1.68.0"
 mcp = ">=1.0.0"
 click = ">=8.1.0"
