@@ -1,13 +1,13 @@
 ---
 name: coala-client
-description: How to use the coala-client CLI for chat with LLMs, MCP servers, and skills. Use when the user asks how to use coala, run coala chat, add MCP servers, import CWL toolsets, list or call MCP tools, import or load skills, or use the sandbox run_command tool.
+description: How to use the coala-client CLI for chat with LLMs, MCP servers, and skills. Use when the user asks how to use coala, run coala chat, add MCP servers, import CWL toolsets, list or call MCP tools, or import or load skills.
 homepage: https://github.com/coala-info/coala_client
 metadata: {"clawdbot":{"emoji":"🧬","requires":{"bins":["coala-client"]},"install":[{"id":"uv","kind":"uv","package":"coala-client","bins":["coala-client"],"label":"Install coala-client (uv)"}]}}
 ---
 
 # Coala Client
 
-Part of the coala ecosystem. CLI for chat with OpenAI-compatible LLMs (OpenAI, Gemini, Ollama) and MCP (Model Context Protocol) servers. Supports importing CWL toolsets as MCP servers, importing skills, and an optional sandbox to run shell commands.
+Part of the coala ecosystem. CLI for chat with OpenAI-compatible LLMs (OpenAI, Gemini, Ollama) and MCP (Model Context Protocol) servers. Supports importing CWL toolsets as MCP servers, importing skills.
 
 ## Config paths
 
@@ -30,7 +30,7 @@ Part of the coala ecosystem. CLI for chat with OpenAI-compatible LLMs (OpenAI, G
    `coala ask "question"` — single prompt with MCP.
 
 4. **Options**  
-   `-p, --provider` (openai|gemini|ollama|custom), `-m, --model`, `--no-mcp`, `--sandbox`.
+   `-p, --provider` (openai|gemini|ollama|custom), `-m, --model`, `--no-mcp`.
 
 ## MCP: CWL toolsets
 
