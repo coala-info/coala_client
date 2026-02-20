@@ -168,17 +168,35 @@ coala config  # Show current configuration
 
 ```bash
 # Import one or more CWL files into a named toolset (copied to ~/.config/coala/mcps/<toolset>/)
-coala mcp <TOOLSET> file1.cwl [file2.cwl ...]
+coala mcp-import <TOOLSET> file1.cwl [file2.cwl ...]
 
 # Import a zip of CWL files (extracted to ~/.config/coala/mcps/<toolset>/)
-coala mcp <TOOLSET> tools.zip
+coala mcp-import <TOOLSET> tools.zip
 
 # SOURCES can also be http(s) URLs to a .cwl file or a .zip
-coala mcp <TOOLSET> https://example.com/tools.zip
-coala mcp <TOOLSET> https://example.com/tool.cwl
+coala mcp-import <TOOLSET> https://example.com/tools.zip
+coala mcp-import <TOOLSET> https://example.com/tool.cwl
 ```
 
 This creates `run_mcp.py` in `~/.config/coala/mcps/<toolset>/`, adds the server to `~/.config/coala/mcps/mcp_servers.json`, and prints the MCP entry. The generated script uses `coala.mcp_api` (stdio transport). Ensure the `coala` package is installed in the environment that runs the MCP server.
+
+**List servers and tools:**
+
+```bash
+# List configured MCP server names
+coala mcp-list
+
+# Show tool schemas (name, description, inputSchema) for a server
+coala mcp-list <SERVER_NAME>
+```
+
+**Call an MCP tool directly:**
+
+```bash
+coala mcp-call <SERVER>.<TOOL> --args '<JSON>'
+# Example:
+coala mcp-call gene-variant.ncbi_datasets_gene --args '{"data": [{"gene": "TP53", "taxon": "human"}]}'
+```
 
 ### Skills
 

@@ -8,8 +8,66 @@ import click
 
 from .cli import run_chat, run_single_prompt
 from .config import create_default_mcp_config, load_config
+from .mcp_manager import MCPManager
 from .mcp_import import import_cwl_toolset
 from .skill_import import SKILLS_DIR, import_skills
+
+
+async def _mcp_list_servers() -> None:
+    """List MCP server names from config."""
+    cfg = load_config()
+    servers = cfg.get_mcp_servers()
+    if not servers:
+        click.echo("No MCP servers configured. Add one with: coala mcp-import <toolset> <sources>")
+        return
+    for name in sorted(servers):
+        click.echo(name)
+
+
+async def _mcp_list_tools(server_name: str) -> None:
+    """Connect to one server and print tool schemas."""
+    cfg = load_config()
+    servers = cfg.get_mcp_servers()
+    if server_name not in servers:
+        click.echo(f"Server not found: {server_name}", err=True)
+        click.echo("Available: " + ", ".join(sorted(servers)) if servers else "none", err=True)
+        raise SystemExit(1)
+    async with MCPManager(cfg) as manager:
+        await manager.connect_server(server_name, servers[server_name])
+        conn = manager.connections.get(server_name)
+        if not conn or not conn.tools:
+            click.echo(f"No tools from server '{server_name}'")
+            return
+        for tool in conn.tools:
+            schema = {
+                "name": tool.name,
+                "description": tool.description or "",
+                "inputSchema": tool.inputSchema or {},
+            }
+            click.echo(json.dumps(schema, indent=2))
+            click.echo("---")
+
+
+async def _mcp_call_tool(server_dot_tool: str, args_json: str) -> None:
+    """Connect to server and call tool with given args."""
+    if "." not in server_dot_tool:
+        click.echo("Expected server.tool (e.g. gene-variant.ncbi_datasets_gene)", err=True)
+        raise SystemExit(1)
+    server_name, tool_name = server_dot_tool.split(".", 1)
+    try:
+        args = json.loads(args_json)
+    except json.JSONDecodeError as e:
+        click.echo(f"Invalid --args JSON: {e}", err=True)
+        raise SystemExit(1) from e
+    cfg = load_config()
+    servers = cfg.get_mcp_servers()
+    if server_name not in servers:
+        click.echo(f"Server not found: {server_name}", err=True)
+        raise SystemExit(1)
+    async with MCPManager(cfg) as manager:
+        await manager.connect_server(server_name, servers[server_name])
+        result = await manager.call_tool(tool_name, args)
+    click.echo(result)
 
 
 class _SourceType(click.ParamType):
@@ -140,7 +198,7 @@ def ask(prompt: str, provider: str | None, model: str | None, no_mcp: bool, sand
     asyncio.run(run_single_prompt(prompt, provider, model, no_mcp, sandbox))
 
 
-@cli.command()
+@cli.command(name="mcp-import")
 @click.argument("toolset")
 @click.argument(
     "sources",
@@ -148,7 +206,7 @@ def ask(prompt: str, provider: str | None, model: str | None, no_mcp: bool, sand
     type=_SourceType(),
     required=True,
 )
-def mcp(toolset: str, sources: tuple[str, ...]) -> None:
+def mcp_import(toolset: str, sources: tuple[str, ...]) -> None:
     """Import CWL files or a zipped CWL archive as an MCP server.
 
     Copies or unzips SOURCES into ~/.config/coala/mcps/TOOLSET/, creates run_mcp.py,
@@ -173,6 +231,50 @@ def mcp(toolset: str, sources: tuple[str, ...]) -> None:
     click.echo()
     click.echo(f"Toolset directory: ~/.config/coala/mcps/{toolset}/")
     click.echo("Script: run_mcp.py")
+
+
+@cli.command(name="mcp")
+@click.argument("toolset")
+@click.argument(
+    "sources",
+    nargs=-1,
+    type=_SourceType(),
+    required=True,
+)
+def mcp(toolset: str, sources: tuple[str, ...]) -> None:
+    """Alias for mcp-import. Import CWL files or a zipped CWL archive as an MCP server."""
+    ctx = click.get_current_context()
+    ctx.invoke(mcp_import, toolset=toolset, sources=sources)
+
+
+@cli.command(name="mcp-list")
+@click.argument("server_name", required=False)
+def mcp_list(server_name: str | None) -> None:
+    """List MCP servers, or list tool schemas for a server.
+
+    Without SERVER_NAME: list configured server names.
+    With SERVER_NAME: connect to that server and print each tool's schema (name, description, inputSchema).
+    """
+    if server_name is None:
+        asyncio.run(_mcp_list_servers())
+    else:
+        asyncio.run(_mcp_list_tools(server_name))
+
+
+@cli.command(name="mcp-call")
+@click.argument("server_dot_tool")
+@click.option(
+    "--args",
+    "args_json",
+    required=True,
+    help='JSON object of tool arguments, e.g. \'{"data": [{"gene": "TP53", "taxon": "human"}]}\'',
+)
+def mcp_call(server_dot_tool: str, args_json: str) -> None:
+    """Run an MCP tool with the given arguments.
+
+    SERVER_DOT_TOOL: server name and tool name joined by a dot (e.g. gene-variant.ncbi_datasets_gene).
+    """
+    asyncio.run(_mcp_call_tool(server_dot_tool, args_json))
 
 
 @cli.command()
