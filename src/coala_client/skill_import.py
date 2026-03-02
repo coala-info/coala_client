@@ -8,6 +8,14 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
+from ._repo import (
+    COALA_REPO,
+    COALA_REPO_BRANCH,
+    COALA_REPO_DATA_PREFIX,
+    download_coala_repo_folder_to,
+    download_github_folder_to,
+    _get_token as _repo_token,
+)
 
 SKILLS_DIR = Path("~/.config/coala/skills").expanduser()
 
@@ -86,35 +94,17 @@ def _parse_github_tree_url(url: str) -> tuple[str, str, str, str] | None:
 def _download_github_folder(
     owner: str, repo: str, branch: str, folder: str, dest_dir: Path
 ) -> None:
-    """Download repo archive and copy the specified folder contents into dest_dir."""
-    archive_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
-    with urlopen(archive_url) as resp:
-        data = resp.read()
-    prefix = f"{repo}-{branch}"
-    with tempfile.TemporaryDirectory() as tmp:
-        zip_path = Path(tmp) / "repo.zip"
-        zip_path.write_bytes(data)
-        with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(tmp)
-        extracted_top = Path(tmp) / prefix
-        if not extracted_top.exists():
-            for d in Path(tmp).iterdir():
-                if d.is_dir():
-                    extracted_top = d
-                    break
-        folder_path = extracted_top / folder if folder else extracted_top
-        if not folder_path.exists():
-            raise FileNotFoundError(
-                f"Folder '{folder}' not found in {owner}/{repo} (branch {branch})"
-            )
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        for p in folder_path.iterdir():
-            dest = dest_dir / p.name
-            if dest.exists() and dest.is_dir() and p.is_dir():
-                for sub in p.iterdir():
-                    shutil.copy2(sub, dest / sub.name)
-            else:
-                shutil.copy2(p, dest)
+    """Download only the specified folder via GitHub Contents API (no full repo)."""
+    if not folder:
+        raise ValueError("Folder path is required for GitHub tree URL")
+    try:
+        download_github_folder_to(
+            owner, repo, branch, folder, dest_dir, token=_repo_token()
+        )
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"Folder '{folder}' not found in {owner}/{repo} (branch {branch})"
+        ) from e
 
 
 def _extract_zip_to_dir(zip_path: Path, dest_dir: Path) -> None:
@@ -136,12 +126,35 @@ def _extract_zip_to_dir(zip_path: Path, dest_dir: Path) -> None:
             top_path.rmdir()
 
 
+def _download_coala_repo_skills_to(toolset: str, dest_dir: Path) -> None:
+    """Download data/<toolset>/skills from coala-repo GitHub (folder only) into dest_dir."""
+    folder_in_repo = f"{COALA_REPO_DATA_PREFIX}/{toolset}/skills"
+    try:
+        download_coala_repo_folder_to(folder_in_repo, dest_dir)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"Folder '{folder_in_repo}' not found in {COALA_REPO}. "
+            f"Check the toolset name (e.g. 'bwa') at {COALA_REPO}/tree/{COALA_REPO_BRANCH}/{COALA_REPO_DATA_PREFIX}."
+        ) from e
+
+
+def import_skills_from_coala_repo(toolset: str) -> Path:
+    """Import skills from coala-repo GitHub (data/<toolset>/skills) into ~/.config/coala/skills/<toolset>."""
+    skills_dir = SKILLS_DIR
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    dest_dir = skills_dir / toolset
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir)
+    _download_coala_repo_skills_to(toolset, dest_dir)
+    return dest_dir
+
+
 def import_skills(sources: list[str | Path]) -> Path:
     """Import skills from GitHub tree URLs or zip URLs/paths into ~/.config/coala/skills.
 
     Each source is placed in its own subfolder (e.g. skills/bedtools/, skills/agent-skills/).
 
-    - GitHub tree URL: downloads repo archive, copies folder into skills/<repo>/.
+    - GitHub tree URL: downloads only that folder via GitHub API (no full repo), into skills/<repo>/.
     - Zip URL or local zip: extracts into skills/<folder_name>/ (folder from URL path or zip stem).
     - Local directory: copies into skills/<dir_name>/.
 

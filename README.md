@@ -162,16 +162,26 @@ coala config  # Show current configuration
 
 ### CWL toolset as MCP server
 
+Import from the **coala-repo** (no full repo download; only the tool folder is fetched via GitHub API):
+
+```bash
+# Import from coala-repo (data/<TOOLSET>), e.g. data/bwa
+coala mcp <TOOLSET>
+coala mcp bwa
+# Alias: coala mcp-import bwa
+```
+
+Or provide your own CWL sources:
+
 ```bash
 # Import one or more CWL files into a named toolset (copied to ~/.config/coala/mcps/<toolset>/)
-coala mcp-import <TOOLSET> file1.cwl [file2.cwl ...]
+coala mcp <TOOLSET> file1.cwl [file2.cwl ...]
 
 # Import a zip of CWL files (extracted to ~/.config/coala/mcps/<toolset>/)
-coala mcp-import <TOOLSET> tools.zip
+coala mcp <TOOLSET> tools.zip
 
 # SOURCES can also be http(s) URLs to a .cwl file or a .zip
-coala mcp-import <TOOLSET> https://example.com/tools.zip
-coala mcp-import <TOOLSET> https://example.com/tool.cwl
+coala mcp <TOOLSET> https://example.com/tools.zip
 ```
 
 This creates `run_mcp.py` in `~/.config/coala/mcps/<toolset>/`, adds the server to `~/.config/coala/mcps/mcp_servers.json`, and prints the MCP entry. The generated script uses `coala.mcp_api` (stdio transport). Ensure the `coala` package is installed in the environment that runs the MCP server.
@@ -196,6 +206,16 @@ coala mcp-call gene-variant.ncbi_datasets_gene --args '{"data": [{"gene": "TP53"
 
 ### Skills
 
+Import from the **coala-repo** (only the skills folder is fetched; no full repo download):
+
+```bash
+# Import from coala-repo (data/<TOOLSET>/skills), e.g. data/bwa/skills
+coala skill <TOOLSET>
+coala skill bwa
+```
+
+Or provide a GitHub tree URL, zip URL, or local path:
+
 ```bash
 # Import skills from a GitHub folder (e.g. vercel-labs/agent-skills/skills)
 coala skill https://github.com/vercel-labs/agent-skills/tree/main/skills
@@ -205,7 +225,22 @@ coala skill http://localhost:3000/files/bedtools/bedtools-skills.zip
 coala skill ./my-skills.zip
 ```
 
-All skills are copied to `~/.config/coala/skills/`. Each source gets its own subfolder (e.g. `skills/bedtools/` for a zip from `.../bedtools/bedtools-skills.zip`, `skills/agent-skills/` for the GitHub repo).
+All skills are copied to `~/.config/coala/skills/`. Each source gets its own subfolder (e.g. `skills/bwa/` for `coala skill bwa`, `skills/bedtools/` for a zip from `.../bedtools/bedtools-skills.zip`).
+
+### Search tools (coala repo)
+
+Search the coala tools index (from [coala-mp](https://github.com/coala-info/coala-mp); cached after first run):
+
+```bash
+# Search by name or description (exact name match listed first)
+coala search <QUERY>
+coala search bwa
+
+# Re-fetch the index (ignore cache)
+coala search bwa --refresh
+```
+
+The index is cached at `~/.config/coala/cache/tools-index.json`.
 
 ## Examples
 

@@ -9,8 +9,9 @@ import click
 from .cli import run_chat, run_single_prompt
 from .config import create_default_mcp_config, load_config
 from .mcp_manager import MCPManager
-from .mcp_import import import_cwl_toolset
-from .skill_import import SKILLS_DIR, import_skills
+from .mcp_import import import_cwl_toolset, import_cwl_toolset_from_coala_repo
+from .skill_import import SKILLS_DIR, import_skills, import_skills_from_coala_repo
+from .tools_index import get_tools_index, search_tools
 
 
 async def _mcp_list_servers() -> None:
@@ -18,7 +19,7 @@ async def _mcp_list_servers() -> None:
     cfg = load_config()
     servers = cfg.get_mcp_servers()
     if not servers:
-        click.echo("No MCP servers configured. Add one with: coala mcp-import <toolset> <sources>")
+        click.echo("No MCP servers configured. Add one with: coala mcp <toolset> or coala mcp <toolset> <sources>")
         return
     for name in sorted(servers):
         click.echo(name)
@@ -204,24 +205,33 @@ def ask(prompt: str, provider: str | None, model: str | None, no_mcp: bool, sand
     "sources",
     nargs=-1,
     type=_SourceType(),
-    required=True,
+    required=False,
 )
 def mcp_import(toolset: str, sources: tuple[str, ...]) -> None:
-    """Import CWL files or a zipped CWL archive as an MCP server.
+    """Import CWL as an MCP server from coala-repo or from SOURCES.
 
-    Copies or unzips SOURCES into ~/.config/coala/mcps/TOOLSET/, creates run_mcp.py,
-    and adds the server to the MCP config. Returns the configuration.
+    With no SOURCES: imports from coala-repo GitHub (data/TOOLSET), e.g. `coala mcp bwa`.
+    For private repo, set COALA_REPO_TOKEN or GITHUB_TOKEN.
+
+    With SOURCES: copies or unzips SOURCES into ~/.config/coala/mcps/TOOLSET/, creates run_mcp.py,
+    and adds the server to the MCP config.
 
     SOURCES: local paths or http(s) URLs to .cwl files or a .zip containing .cwl.
     """
     cfg = load_config()
     Path(cfg.mcp_config_file).expanduser().parent.mkdir(parents=True, exist_ok=True)
     try:
-        entry = import_cwl_toolset(
-            toolset,
-            list(sources),
-            mcp_config_file=cfg.mcp_config_file,
-        )
+        if not sources:
+            entry = import_cwl_toolset_from_coala_repo(
+                toolset,
+                mcp_config_file=cfg.mcp_config_file,
+            )
+        else:
+            entry = import_cwl_toolset(
+                toolset,
+                list(sources),
+                mcp_config_file=cfg.mcp_config_file,
+            )
     except (FileNotFoundError, ValueError, OSError) as e:
         click.echo(str(e), err=True)
         raise SystemExit(1) from e
@@ -239,10 +249,10 @@ def mcp_import(toolset: str, sources: tuple[str, ...]) -> None:
     "sources",
     nargs=-1,
     type=_SourceType(),
-    required=True,
+    required=False,
 )
 def mcp(toolset: str, sources: tuple[str, ...]) -> None:
-    """Alias for mcp-import. Import CWL files or a zipped CWL archive as an MCP server."""
+    """Alias for mcp-import. Import from coala-repo (e.g. coala mcp bwa) or from SOURCES."""
     ctx = click.get_current_context()
     ctx.invoke(mcp_import, toolset=toolset, sources=sources)
 
@@ -277,25 +287,75 @@ def mcp_call(server_dot_tool: str, args_json: str) -> None:
     asyncio.run(_mcp_call_tool(server_dot_tool, args_json))
 
 
+def _is_toolset_from_coala_repo(sources: tuple[str, ...]) -> str | None:
+    """If a single non-URL, non-existing path is given, treat as toolset name for coala-repo."""
+    if len(sources) != 1:
+        return None
+    s = sources[0].strip()
+    if s.startswith("http://") or s.startswith("https://"):
+        return None
+    if Path(s).expanduser().resolve().exists():
+        return None
+    return s
+
+
 @cli.command()
 @click.argument(
     "sources",
     nargs=-1,
-    type=_SourceType(),
-    required=True,
+    type=str,
+    required=False,
 )
 def skill(sources: tuple[str, ...]) -> None:
-    """Import skills from a GitHub folder URL or a zip URL/path into ~/.config/coala/skills.
+    """Import skills from coala-repo or from SOURCES.
 
-    SOURCES: GitHub tree URL (e.g. https://github.com/owner/repo/tree/main/skills),
-    zip URL, or local zip/directory path.
+    With a single toolset name (e.g. bwa): imports from coala-repo data/TOOLSET/skills,
+    e.g. `coala skill bwa`. For private repo, set COALA_REPO_TOKEN or GITHUB_TOKEN.
+
+    With SOURCES: GitHub tree URL, zip URL, or local zip/directory path.
     """
+    if not sources:
+        click.echo("Usage: coala skill <toolset>  or  coala skill <SOURCES...>", err=True)
+        raise SystemExit(1)
     try:
-        skills_dir = import_skills(list(sources))
+        toolset = _is_toolset_from_coala_repo(sources)
+        if toolset is not None:
+            skills_dir = import_skills_from_coala_repo(toolset)
+        else:
+            skills_dir = import_skills(list(sources))
     except (FileNotFoundError, ValueError, OSError) as e:
         click.echo(str(e), err=True)
         raise SystemExit(1) from e
     click.echo(f"Skills imported to {skills_dir}")
+
+
+@cli.command()
+@click.argument("query", required=True)
+@click.option(
+    "--refresh",
+    is_flag=True,
+    help="Ignore cache and re-fetch the tools index",
+)
+def search(query: str, refresh: bool) -> None:
+    """Search for tools in the coala repo.
+
+    Uses the package index from coala-mp (cached after first run). QUERY is matched
+    against tool name, id, description, etc.
+    """
+    try:
+        index = get_tools_index(force_refresh=refresh)
+    except OSError as e:
+        click.echo(f"Failed to load tools index: {e}", err=True)
+        raise SystemExit(1) from e
+    matches = search_tools(index, query)
+    if not matches:
+        click.echo("No tools found.")
+        return
+    for t in matches:
+        name = t.get("name") or t.get("id") or t.get("toolset") or "(no name)"
+        desc = t.get("description") or t.get("desc") or ""
+        line = name if not desc else f"{name}: {desc[:80]}{'...' if len(desc) > 80 else ''}"
+        click.echo(line)
 
 
 @cli.command()

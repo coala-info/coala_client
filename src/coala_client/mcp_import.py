@@ -9,6 +9,13 @@ from typing import Any
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
+from ._repo import (
+    COALA_REPO,
+    COALA_REPO_BRANCH,
+    COALA_REPO_DATA_PREFIX,
+    download_coala_repo_folder_to,
+)
+
 
 def _is_url(source: str | Path) -> bool:
     if not isinstance(source, str):
@@ -48,6 +55,27 @@ def _ensure_mcps_dir() -> Path:
     mcps_dir = Path("~/.config/coala/mcps").expanduser()
     mcps_dir.mkdir(parents=True, exist_ok=True)
     return mcps_dir
+
+
+def _download_coala_repo_folder_to(toolset: str, toolset_dir: Path) -> list[Path]:
+    """Download data/<toolset> from coala-repo GitHub (folder only) into toolset_dir. Returns .cwl paths."""
+    folder_path = f"{COALA_REPO_DATA_PREFIX}/{toolset}"
+    try:
+        download_coala_repo_folder_to(folder_path, toolset_dir)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"Folder '{folder_path}' not found in {COALA_REPO}. "
+            f"Check the toolset name (e.g. 'bwa') at {COALA_REPO}/tree/{COALA_REPO_BRANCH}/{COALA_REPO_DATA_PREFIX}."
+        ) from e
+    cwl_paths = sorted(
+        p for p in toolset_dir.rglob("*")
+        if p.is_file() and p.suffix.lower() == ".cwl"
+    )
+    if not cwl_paths:
+        raise ValueError(
+            f"No .cwl files in {folder_path} in {COALA_REPO}."
+        )
+    return cwl_paths
 
 
 def _copy_cwl_sources(sources: list[Path], dest_dir: Path) -> list[Path]:
@@ -150,6 +178,16 @@ def import_cwl_toolset(
             "No .cwl files found. Provide .cwl files or a .zip containing .cwl files."
         )
 
+    return _register_toolset(toolset_dir, cwl_paths, toolset, mcp_config_file)
+
+
+def _register_toolset(
+    toolset_dir: Path,
+    cwl_paths: list[Path],
+    toolset: str,
+    mcp_config_file: str,
+) -> dict[str, Any]:
+    """Write run_mcp.py and add toolset to mcp_servers.json. Returns the server entry."""
     # Use run_mcp.py to avoid shadowing the 'mcp' package (from mcp.server.fastmcp)
     mcp_py_path = toolset_dir / "run_mcp.py"
     mcp_py_path.write_text(_generate_mcp_py(toolset_dir, cwl_paths))
@@ -159,7 +197,6 @@ def import_cwl_toolset(
     data = _load_mcp_servers_config(config_path)
     servers = data.setdefault("mcpServers", {})
 
-    # Use absolute path so MCP client can run from any cwd
     mcp_py_abs = str(mcp_py_path.resolve())
     server_entry = {
         "command": "python",
@@ -168,5 +205,21 @@ def import_cwl_toolset(
     }
     servers[toolset] = server_entry
     _save_mcp_servers_config(config_path, data)
-
     return server_entry
+
+
+def import_cwl_toolset_from_coala_repo(
+    toolset: str,
+    *,
+    mcp_config_file: str = "~/.config/coala/mcps/mcp_servers.json",
+) -> dict[str, Any]:
+    """Import CWL files from coala-repo GitHub (data/<toolset>) and register as MCP server.
+
+    Downloads from https://github.com/coala-info/coala-repo tree main, folder data/<toolset>.
+    """
+    mcps_dir = _ensure_mcps_dir()
+    toolset_dir = mcps_dir / toolset
+    if toolset_dir.exists():
+        shutil.rmtree(toolset_dir)
+    cwl_paths = _download_coala_repo_folder_to(toolset, toolset_dir)
+    return _register_toolset(toolset_dir, cwl_paths, toolset, mcp_config_file)

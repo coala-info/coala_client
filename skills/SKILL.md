@@ -37,8 +37,11 @@ Part of the coala ecosystem. CLI for chat with OpenAI-compatible LLMs (OpenAI, G
 No API key needed for MCP import, list, or call — only for chat/ask with an LLM.
 
 - **Import** (creates toolset under `~/.config/coala/mcps/<TOOLSET>/` and registers server):  
-  `coala mcp-import <TOOLSET> <SOURCES...>` or alias `coala mcp ...`  
-  SOURCES: local `.cwl` files, a `.zip`, or http(s) URLs to a .cwl or .zip.  
+  - **From coala-repo** (only the tool folder is downloaded, no full repo):  
+    `coala mcp <TOOLSET>` e.g. `coala mcp bwa` (imports from coala-repo `data/<TOOLSET>/`).  
+  - **From your own sources:**  
+    `coala mcp <TOOLSET> <SOURCES...>` or `coala mcp-import <TOOLSET> <SOURCES...>`  
+    SOURCES: local `.cwl` files, a `.zip`, or http(s) URLs to a .cwl or .zip.  
   Requires the `coala` package where the MCP server runs (for `run_mcp.py`).
 
 - **List**  
@@ -52,13 +55,19 @@ No API key needed for MCP import, list, or call — only for chat/ask with an LL
 ## Skills
 
 - **Import** (into `~/.config/coala/skills/`, one subfolder per source):  
-  `coala skill <SOURCES...>`  
-  SOURCES: GitHub tree URL (e.g. `https://github.com/owner/repo/tree/main/skills`), zip URL, or local zip/dir.
-
+  - **From coala-repo** (only the skills folder is downloaded):  
+    `coala skill <TOOLSET>` e.g. `coala skill bwa` (imports from coala-repo `data/<TOOLSET>/skills/`).  
+  - **From URL or path:**  
+    `coala skill <SOURCES...>` — GitHub tree URL, zip URL, or local zip/dir.  
 - **In chat**  
   `/skill` — list installed skills.  
   `/skill <name>` — load skill from `~/.config/coala/skills/<name>/` (e.g. SKILL.md) into context.
 
+## Search tools
+
+- **Search** the coala tools index (from coala-mp; cached at `~/.config/coala/cache/tools-index.json`):  
+  `coala search <QUERY>` — e.g. `coala search bwa`. Exact name matches appear first.  
+  `coala search <QUERY> --refresh` — re-fetch the index.
 
 ## Chat commands
 
