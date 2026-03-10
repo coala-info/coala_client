@@ -50,11 +50,22 @@ def _resolve_sources(sources: list[str | Path]) -> tuple[list[Path], tempfile.Te
     return resolved, temp_dir
 
 
-def _ensure_mcps_dir() -> Path:
-    """Return ~/.config/coala/mcps/ (MCP config and toolsets)."""
-    mcps_dir = Path("~/.config/coala/mcps").expanduser()
+def _mcps_dir_from_config(mcp_config_file: str) -> Path:
+    """Return MCP root dir (parent of mcp_servers.json); create if needed."""
+    config_path = Path(mcp_config_file).expanduser()
+    mcps_dir = config_path.parent
     mcps_dir.mkdir(parents=True, exist_ok=True)
     return mcps_dir
+
+
+def _strip_non_cwl_artifacts(toolset_dir: Path) -> None:
+    """Remove report.md and skills/ from toolset dir so only CWL and run_mcp.py remain."""
+    report_md = toolset_dir / "report.md"
+    if report_md.is_file():
+        report_md.unlink()
+    skills_dir = toolset_dir / "skills"
+    if skills_dir.is_dir():
+        shutil.rmtree(skills_dir)
 
 
 def _download_coala_repo_folder_to(toolset: str, toolset_dir: Path) -> list[Path]:
@@ -67,6 +78,7 @@ def _download_coala_repo_folder_to(toolset: str, toolset_dir: Path) -> list[Path
             f"Folder '{folder_path}' not found in {COALA_REPO}. "
             f"Check the toolset name (e.g. 'bwa') at {COALA_REPO}/tree/{COALA_REPO_BRANCH}/{COALA_REPO_DATA_PREFIX}."
         ) from e
+    _strip_non_cwl_artifacts(toolset_dir)
     cwl_paths = sorted(
         p for p in toolset_dir.rglob("*")
         if p.is_file() and p.suffix.lower() == ".cwl"
@@ -92,6 +104,7 @@ def _copy_cwl_sources(sources: list[Path], dest_dir: Path) -> list[Path]:
             if src.suffix.lower() != ".cwl":
                 raise ValueError(f"Not a CWL file: {src}")
             shutil.copy2(src, dest_dir / src.name)
+    _strip_non_cwl_artifacts(dest_dir)
     # Include .cwl files in any subdirectory (e.g. from zip with nested dirs)
     cwl_paths = sorted(
         p for p in dest_dir.rglob("*")
@@ -149,7 +162,7 @@ def import_cwl_toolset(
         FileNotFoundError: If any local source path does not exist.
         ValueError: If a non-zip source is not a .cwl file.
     """
-    mcps_dir = _ensure_mcps_dir()
+    mcps_dir = _mcps_dir_from_config(mcp_config_file)
     toolset_dir = mcps_dir / toolset
 
     resolved, temp_dir = _resolve_sources(sources)
@@ -217,7 +230,7 @@ def import_cwl_toolset_from_coala_repo(
 
     Downloads from https://github.com/coala-info/coala-repo tree main, folder data/<toolset>.
     """
-    mcps_dir = _ensure_mcps_dir()
+    mcps_dir = _mcps_dir_from_config(mcp_config_file)
     toolset_dir = mcps_dir / toolset
     if toolset_dir.exists():
         shutil.rmtree(toolset_dir)

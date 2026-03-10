@@ -10,7 +10,12 @@ from .cli import run_chat, run_single_prompt
 from .config import create_default_mcp_config, load_config
 from .mcp_manager import MCPManager
 from .mcp_import import import_cwl_toolset, import_cwl_toolset_from_coala_repo
-from .skill_import import SKILLS_DIR, import_skills, import_skills_from_coala_repo
+from .skill_import import (
+    GLOBAL_SKILLS_DIR,
+    get_local_skills_dir,
+    import_skills,
+    import_skills_from_coala_repo,
+)
 from .tools_index import get_tools_index, search_tools
 
 
@@ -199,6 +204,15 @@ def ask(prompt: str, provider: str | None, model: str | None, no_mcp: bool, sand
     asyncio.run(run_single_prompt(prompt, provider, model, no_mcp, sandbox))
 
 
+MCP_CONFIG_DEFAULT = "~/.config/coala/mcps/mcp_servers.json"
+MCP_CONFIG_GLOBAL = "~/.agents/mcps/mcp_servers.json"
+
+
+def _mcp_config_local() -> str:
+    """Return path to project-local MCP config (cwd/.agents/mcps/mcp_servers.json)."""
+    return str(Path.cwd() / ".agents" / "mcps" / "mcp_servers.json")
+
+
 @cli.command(name="mcp-import")
 @click.argument("toolset")
 @click.argument(
@@ -207,39 +221,64 @@ def ask(prompt: str, provider: str | None, model: str | None, no_mcp: bool, sand
     type=_SourceType(),
     required=False,
 )
-def mcp_import(toolset: str, sources: tuple[str, ...]) -> None:
+@click.option(
+    "--local",
+    "local_",
+    is_flag=True,
+    help="Install to current directory .agents/mcps/ (project-local).",
+)
+@click.option(
+    "--global",
+    "global_",
+    is_flag=True,
+    help="Install to ~/.agents/mcps/.",
+)
+def mcp_import(toolset: str, sources: tuple[str, ...], local_: bool, global_: bool) -> None:
     """Import CWL as an MCP server from coala-repo or from SOURCES.
 
     With no SOURCES: imports from coala-repo GitHub (data/TOOLSET), e.g. `coala mcp bwa`.
     For private repo, set COALA_REPO_TOKEN or GITHUB_TOKEN.
 
-    With SOURCES: copies or unzips SOURCES into ~/.config/coala/mcps/TOOLSET/, creates run_mcp.py,
+    With SOURCES: copies or unzips SOURCES into the MCP toolset dir, creates run_mcp.py,
     and adds the server to the MCP config.
+
+    Use --local to install to .agents/mcps/ in the current directory, or --global for ~/.agents/mcps/.
+    Default (no flag) uses ~/.config/coala/mcps/.
 
     SOURCES: local paths or http(s) URLs to .cwl files or a .zip containing .cwl.
     """
-    cfg = load_config()
-    Path(cfg.mcp_config_file).expanduser().parent.mkdir(parents=True, exist_ok=True)
+    if local_ and global_:
+        click.echo("Cannot use both --local and --global.", err=True)
+        raise SystemExit(1)
+    if local_:
+        mcp_config_file = _mcp_config_local()
+    elif global_:
+        mcp_config_file = MCP_CONFIG_GLOBAL
+    else:
+        mcp_config_file = load_config().mcp_config_file
+    Path(mcp_config_file).expanduser().parent.mkdir(parents=True, exist_ok=True)
     try:
         if not sources:
             entry = import_cwl_toolset_from_coala_repo(
                 toolset,
-                mcp_config_file=cfg.mcp_config_file,
+                mcp_config_file=mcp_config_file,
             )
         else:
             entry = import_cwl_toolset(
                 toolset,
                 list(sources),
-                mcp_config_file=cfg.mcp_config_file,
+                mcp_config_file=mcp_config_file,
             )
     except (FileNotFoundError, ValueError, OSError) as e:
         click.echo(str(e), err=True)
         raise SystemExit(1) from e
-    click.echo("MCP server added to ~/.config/coala/mcps/mcp_servers.json. Entry:")
+    config_display = mcp_config_file.replace(str(Path.home()), "~")
+    mcps_base = str(Path(mcp_config_file).expanduser().parent).replace(str(Path.home()), "~")
+    click.echo(f"MCP server added to {config_display}. Entry:")
     click.echo()
     click.echo(json.dumps({"mcpServers": {toolset: entry}}, indent=2))
     click.echo()
-    click.echo(f"Toolset directory: ~/.config/coala/mcps/{toolset}/")
+    click.echo(f"Toolset directory: {mcps_base}/{toolset}/")
     click.echo("Script: run_mcp.py")
 
 
@@ -251,10 +290,22 @@ def mcp_import(toolset: str, sources: tuple[str, ...]) -> None:
     type=_SourceType(),
     required=False,
 )
-def mcp(toolset: str, sources: tuple[str, ...]) -> None:
+@click.option(
+    "--local",
+    "local_",
+    is_flag=True,
+    help="Install to current directory .agents/mcps/ (project-local).",
+)
+@click.option(
+    "--global",
+    "global_",
+    is_flag=True,
+    help="Install to ~/.agents/mcps/.",
+)
+def mcp(toolset: str, sources: tuple[str, ...], local_: bool, global_: bool) -> None:
     """Alias for mcp-import. Import from coala-repo (e.g. coala mcp bwa) or from SOURCES."""
     ctx = click.get_current_context()
-    ctx.invoke(mcp_import, toolset=toolset, sources=sources)
+    ctx.invoke(mcp_import, toolset=toolset, sources=sources, local_=local_, global_=global_)
 
 
 @cli.command(name="mcp-list")
@@ -306,27 +357,51 @@ def _is_toolset_from_coala_repo(sources: tuple[str, ...]) -> str | None:
     type=str,
     required=False,
 )
-def skill(sources: tuple[str, ...]) -> None:
+@click.option(
+    "--local",
+    "local_",
+    is_flag=True,
+    help="Install to current directory .agents/skills/ (project-local).",
+)
+@click.option(
+    "--global",
+    "global_",
+    is_flag=True,
+    help="Install to ~/.agents/skills/.",
+)
+def skill(sources: tuple[str, ...], local_: bool, global_: bool) -> None:
     """Import skills from coala-repo or from SOURCES.
 
     With a single toolset name (e.g. bwa): imports from coala-repo data/TOOLSET/skills,
     e.g. `coala skill bwa`. For private repo, set COALA_REPO_TOKEN or GITHUB_TOKEN.
 
     With SOURCES: GitHub tree URL, zip URL, or local zip/directory path.
+
+    Use --local to install to .agents/skills/ in the current directory, or --global for ~/.agents/skills/.
+    Default (no flag) uses ~/.config/coala/skills/.
     """
     if not sources:
         click.echo("Usage: coala skill <toolset>  or  coala skill <SOURCES...>", err=True)
         raise SystemExit(1)
+    if local_ and global_:
+        click.echo("Cannot use both --local and --global.", err=True)
+        raise SystemExit(1)
+    if local_:
+        skills_dir = get_local_skills_dir()
+    elif global_:
+        skills_dir = GLOBAL_SKILLS_DIR
+    else:
+        skills_dir = None
     try:
         toolset = _is_toolset_from_coala_repo(sources)
         if toolset is not None:
-            skills_dir = import_skills_from_coala_repo(toolset)
+            dest = import_skills_from_coala_repo(toolset, skills_dir=skills_dir)
         else:
-            skills_dir = import_skills(list(sources))
+            dest = import_skills(list(sources), skills_dir=skills_dir)
     except (FileNotFoundError, ValueError, OSError) as e:
         click.echo(str(e), err=True)
         raise SystemExit(1) from e
-    click.echo(f"Skills imported to {skills_dir}")
+    click.echo(f"Skills imported to {dest}")
 
 
 @cli.command()

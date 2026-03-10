@@ -18,32 +18,43 @@ from ._repo import (
 )
 
 SKILLS_DIR = Path("~/.config/coala/skills").expanduser()
+GLOBAL_SKILLS_DIR = Path("~/.agents/skills").expanduser()
+
+
+def get_local_skills_dir() -> Path:
+    """Return the project-local skills dir (cwd/.agents/skills)."""
+    return Path.cwd() / ".agents" / "skills"
 
 
 def list_skills() -> list[str]:
-    """Return names of installed skills (subfolders under SKILLS_DIR)."""
-    if not SKILLS_DIR.exists():
-        return []
-    return sorted(
-        p.name for p in SKILLS_DIR.iterdir() if p.is_dir() and not p.name.startswith(".")
-    )
+    """Return names of installed skills (subfolders under config, local .agents, and ~/.agents)."""
+    names: set[str] = set()
+    for base in (SKILLS_DIR, get_local_skills_dir(), GLOBAL_SKILLS_DIR):
+        if base.exists():
+            names.update(
+                p.name for p in base.iterdir() if p.is_dir() and not p.name.startswith(".")
+            )
+    return sorted(names)
 
 
 def get_skill_content(name: str) -> str | None:
-    """Load skill content from ~/.config/coala/skills/<name>/. Reads SKILL.md if present.
+    """Load skill content from skills dirs (<name>/). Reads SKILL.md if present.
 
+    Looks in local .agents/skills, then ~/.config/coala/skills, then ~/.agents/skills.
     Returns the skill text, or None if the skill folder or SKILL.md is missing.
     """
-    skill_dir = SKILLS_DIR / name
-    if not skill_dir.is_dir():
+    for base in (get_local_skills_dir(), SKILLS_DIR, GLOBAL_SKILLS_DIR):
+        skill_dir = base / name
+        if not skill_dir.is_dir():
+            continue
+        skill_md = skill_dir / "SKILL.md"
+        if skill_md.is_file():
+            return skill_md.read_text(encoding="utf-8", errors="replace")
+        # Fallback: first .md file in the folder
+        for p in sorted(skill_dir.iterdir()):
+            if p.suffix.lower() == ".md":
+                return p.read_text(encoding="utf-8", errors="replace")
         return None
-    skill_md = skill_dir / "SKILL.md"
-    if skill_md.is_file():
-        return skill_md.read_text(encoding="utf-8", errors="replace")
-    # Fallback: first .md file in the folder
-    for p in sorted(skill_dir.iterdir()):
-        if p.suffix.lower() == ".md":
-            return p.read_text(encoding="utf-8", errors="replace")
     return None
 
 
@@ -138,21 +149,22 @@ def _download_coala_repo_skills_to(toolset: str, dest_dir: Path) -> None:
         ) from e
 
 
-def import_skills_from_coala_repo(toolset: str) -> Path:
-    """Import skills from coala-repo GitHub (data/<toolset>/skills) into ~/.config/coala/skills/<toolset>."""
-    skills_dir = SKILLS_DIR
-    skills_dir.mkdir(parents=True, exist_ok=True)
-    dest_dir = skills_dir / toolset
+def import_skills_from_coala_repo(toolset: str, skills_dir: Path | None = None) -> Path:
+    """Import skills from coala-repo GitHub (data/<toolset>/skills) into skills_dir/<toolset>."""
+    base = skills_dir if skills_dir is not None else SKILLS_DIR
+    base.mkdir(parents=True, exist_ok=True)
+    dest_dir = base / toolset
     if dest_dir.exists():
         shutil.rmtree(dest_dir)
     _download_coala_repo_skills_to(toolset, dest_dir)
     return dest_dir
 
 
-def import_skills(sources: list[str | Path]) -> Path:
-    """Import skills from GitHub tree URLs or zip URLs/paths into ~/.config/coala/skills.
+def import_skills(sources: list[str | Path], skills_dir: Path | None = None) -> Path:
+    """Import skills from GitHub tree URLs or zip URLs/paths into the skills directory.
 
     Each source is placed in its own subfolder (e.g. skills/bedtools/, skills/agent-skills/).
+    Default directory is ~/.config/coala/skills; pass skills_dir for e.g. ~/.agent/skills.
 
     - GitHub tree URL: downloads only that folder via GitHub API (no full repo), into skills/<repo>/.
     - Zip URL or local zip: extracts into skills/<folder_name>/ (folder from URL path or zip stem).
@@ -160,8 +172,8 @@ def import_skills(sources: list[str | Path]) -> Path:
 
     Returns the skills directory path.
     """
-    skills_dir = SKILLS_DIR
-    skills_dir.mkdir(parents=True, exist_ok=True)
+    base = skills_dir if skills_dir is not None else SKILLS_DIR
+    base.mkdir(parents=True, exist_ok=True)
 
     for src in sources:
         src_str = str(src).strip()
@@ -169,11 +181,11 @@ def import_skills(sources: list[str | Path]) -> Path:
             parsed = _parse_github_tree_url(src_str)
             if parsed:
                 owner, repo, branch, folder = parsed
-                dest_dir = skills_dir / repo
+                dest_dir = base / repo
                 _download_github_folder(owner, repo, branch, folder, dest_dir)
             else:
                 folder_name = _folder_name_for_source(src_str)
-                dest_dir = skills_dir / folder_name
+                dest_dir = base / folder_name
                 with urlopen(src_str) as resp:
                     data = resp.read()
                 with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f:
@@ -188,7 +200,7 @@ def import_skills(sources: list[str | Path]) -> Path:
             if not path.exists():
                 raise FileNotFoundError(f"Source not found: {path}")
             folder_name = _folder_name_for_source(path)
-            dest_dir = skills_dir / folder_name
+            dest_dir = base / folder_name
             dest_dir.mkdir(parents=True, exist_ok=True)
             if path.suffix.lower() == ".zip":
                 _extract_zip_to_dir(path, dest_dir)
@@ -198,4 +210,4 @@ def import_skills(sources: list[str | Path]) -> Path:
             else:
                 raise ValueError(f"Expected a zip file or directory: {path}")
 
-    return skills_dir
+    return base
